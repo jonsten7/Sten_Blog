@@ -13,8 +13,9 @@ from dotenv import load_dotenv
 from sqlalchemy.sql.schema import ForeignKey
 from werkzeug.security import generate_password_hash, check_password_hash
 # Import your forms from the forms.py
-from forms import CreatePostForm, RegisterForm, LoginForm, CommentForm
-
+from forms import CreatePostForm, RegisterForm, LoginForm, CommentForm, ContactForm
+import smtplib
+from email.message import EmailMessage
 
 '''
 Make sure the required packages are installed: 
@@ -32,6 +33,13 @@ This will install the packages from the requirements.txt for this project.
 load_dotenv()
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
+
+SMTP_HOST = os.getenv("SMTP_HOST")
+SMTP_PORT = int(os.getenv("SMTP_PORT"))
+SMTP_USER = os.getenv("SMTP_USER")
+SMTP_PASS = os.getenv("SMTP_PASS")
+CONTACT_TO = os.getenv("CONTACT_TO")
+
 ckeditor = CKEditor(app)
 Bootstrap5(app)
 
@@ -115,15 +123,18 @@ with app.app_context():
 def register():
     form = RegisterForm()
     if form.validate_on_submit():
-        username = form.username.data
-        email = form.email.data
-        password = generate_password_hash(form.password.data, "pbkdf2:sha256", salt_length=8)
-        user = Users(username=username, email=email, password=password)
-        existing_user = db.session.execute(db.select(Users).where(Users.email == email)).scalar()
-        if existing_user:
+        user = db.session.execute(db.select(Users).where(Users.email == form.email.data)).scalar()
+        if user:
             flash("Email already registered. Please login.")
-            return redirect(url_for('register'))
-        db.session.add(user)
+            return redirect(url_for("login"))
+
+        new_user = Users(
+            username=form.username.data,
+            email=form.email.data,
+            password=generate_password_hash(form.password.data, "pbkdf2:sha256", salt_length=8)
+        )
+
+        db.session.add(new_user)
         db.session.commit()
         login_user(user)
         return redirect(url_for('get_all_posts'))
@@ -210,14 +221,12 @@ def edit_post(post_id):
         title=post.title,
         subtitle=post.subtitle,
         img_url=post.img_url,
-        author=post.author,
         body=post.body
     )
     if edit_form.validate_on_submit():
         post.title = edit_form.title.data
         post.subtitle = edit_form.subtitle.data
         post.img_url = edit_form.img_url.data
-        post.author = current_user
         post.body = edit_form.body.data
         db.session.commit()
         return redirect(url_for("show_post", post_id=post.id))
@@ -239,9 +248,41 @@ def about():
     return render_template("about.html")
 
 
-@app.route("/contact")
+@app.route("/contact", methods=["GET", "POST"])
 def contact():
-    return render_template("contact.html")
+    form = ContactForm()
+    if form.validate_on_submit():
+        name = form.name.data
+        email = form.email.data
+        phone = form.phone.data
+        message = form.message.data
+
+        # Basic validation
+        if not name or not email or not phone or not message:
+            flash('Please fill all fields', 'danger')
+            return redirect(url_for('index') + "#contact")
+
+        # build email
+        msg = EmailMessage()
+        msg['Subject'] = f'Blog Site Contact from {name}'
+        msg['From'] = SMTP_USER
+        msg['To'] = CONTACT_TO
+        body = f"Name: {name}\nEmail: {email}\nPhone: {phone}\n\nMessage:\n{message}"
+        msg.set_content(body)
+
+        # send mail
+        try:
+            with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+                server.starttls()
+                server.login(SMTP_USER, SMTP_PASS)
+                server.send_message(msg)
+            flash('Message sent — thanks!', 'success')
+        except Exception as e:
+            print("Mail error:", e)
+            flash('Could not send message. Try again later.', 'danger')
+        return  redirect(url_for('contact'))
+
+    return render_template("contact.html", form=form)
 
 
 if __name__ == "__main__":
