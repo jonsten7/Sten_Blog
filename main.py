@@ -40,7 +40,7 @@ gravatar = Gravatar(app,
                     use_ssl=False,
                     base_url=None)
 
-#CREATE A TEXT DECORATOR FOR ADMINS
+# A TEXT DECORATOR FOR ADMINS
 def admin_only(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -50,7 +50,6 @@ def admin_only(f):
     return decorated_function
 
 
-# TODO: Configure Flask-Login
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = "login"
